@@ -129,8 +129,8 @@ module tb_ahb_fft();
         slv_hmaster = 0;
         slv_hmastlock = 0;
 
-        // Load Input Data (Using Absolute Path from MATLAB)
-        $readmemh("C:/Users/ragha/Desktop/IIITDM/audio_in.txt", audio_mem);
+        // Load Input Data (Using Relative Path)
+        $readmemh("audio_in.txt", audio_mem);
 
         // Reset Sequence
         #50 hresetn = 1;
@@ -159,7 +159,7 @@ module tb_ahb_fft();
 
         // 4. DMA: Read Output Data to 0x000 - 0x7FC
         $display("Reading Output Frequencies over AHB...");
-        outfile = $fopen("C:/Users/ragha/Desktop/IIITDM/fft_out.txt", "w");
+        outfile = $fopen("fft_out.txt", "w");
         for (i = 0; i < 512; i = i + 1) begin
             ahb_read(i * 4, read_data);
             $fdisplay(outfile, "%08X", read_data);
@@ -168,7 +168,7 @@ module tb_ahb_fft();
         
         $display("-----------------------------------------");
         $display("Testbench Finished Successfully.");
-        $display("Output written to 'C:/Users/ragha/Desktop/IIITDM/fft_out.txt'");
+        $display("Output written to 'fft_out.txt'");
         $display("-----------------------------------------");
         
         $finish;
