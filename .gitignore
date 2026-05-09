@@ -1,0 +1,26 @@
+# Vivado-specific ignore files
+*.jou
+*.log
+*.str
+*.pb
+*.wdb
+*.dir
+*.xpe
+*.csv
+.Xil/
+
+# Vivado project directories that don't need to be tracked
+self_fft.cache/
+self_fft.hw/
+self_fft.ip_user_files/
+self_fft.runs/
+self_fft.sim/
+
+# Keep the IP core definitions but ignore the generated files
+*.xci
+!*.xci
+
+# General
+*~
+*.bak
+*.swp
