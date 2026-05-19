@@ -5,10 +5,20 @@
 
 clear; clc; close all;
 
-% --- DEFINE ABSOLUTE PATHS ---
-base_dir = 'C:\Users\ragha\Desktop\IIITDM\';
-audio_in_path = fullfile(base_dir, 'audio_in.txt');
-fft_out_path  = fullfile(base_dir, 'fft_out.txt');
+% --- DEFINE DYNAMIC CO-SIMULATION PATHS ---
+[script_dir, ~, ~] = fileparts(mfilename('fullpath'));
+proj_root = script_dir;  % Clean project root folder
+sim_dir = fullfile(proj_root, 'self_fft.sim', 'sim_1', 'behav', 'xsim');
+
+% Write input to both project root and simulation directory
+if ~exist(sim_dir, 'dir')
+    mkdir(sim_dir);
+end
+audio_in_path_proj = fullfile(proj_root, 'audio_in.txt');
+audio_in_path_sim  = fullfile(sim_dir, 'audio_in.txt');
+
+% Read output directly from the Vivado simulation folder
+fft_out_path = fullfile(sim_dir, 'fft_out_soc.txt');
 
 %% PART 1: GENERATE PCM AUDIO INPUT
 fs = 16000;           % 16 kHz microphone sampling rate
@@ -27,16 +37,28 @@ audio_in_quantized = round(audio_in * 32767);
 q15_audio_hex = audio_in_quantized;
 q15_audio_hex(q15_audio_hex < 0) = q15_audio_hex(q15_audio_hex < 0) + 65536;
 
-% Write to absolute path (Format: 32-bit Hex -> [Real 16-bit][Imag 16-bit])
-fid_in = fopen(audio_in_path, 'w');
-for i = 1:N
-    fprintf(fid_in, '%04X0000\n', q15_audio_hex(i));
-end
-fclose(fid_in);
+% Pre-scramble the input into Bit-Reversed order for DIT hardware FFT
+bit_rev_indices = bin2dec(fliplr(dec2bin(0:N-1, log2(N)))) + 1;
+q15_audio_hex_rev = q15_audio_hex(bit_rev_indices);
 
-fprintf('Step 1 Complete: audio_in.txt generated at %s\n', audio_in_path);
-disp('-> NOW RUN YOUR VERILOG TESTBENCH <-');
-disp('Press any key once you have copied fft_out.txt back to this folder...');
+% Write to absolute path (Format: 32-bit Hex -> [Real 16-bit][Imag 16-bit])
+% Write to absolute project root path
+fid_proj = fopen(audio_in_path_proj, 'w');
+for i = 1:N
+    fprintf(fid_proj, '%04X0000\n', q15_audio_hex_rev(i));
+end
+fclose(fid_proj);
+
+% Write directly to active Vivado simulation path
+fid_sim = fopen(audio_in_path_sim, 'w');
+for i = 1:N
+    fprintf(fid_sim, '%04X0000\n', q15_audio_hex_rev(i));
+end
+fclose(fid_sim);
+
+fprintf('Step 1 Complete: audio_in.txt generated in project and simulation folders.\n');
+disp('-> NOW RUN YOUR VIVADO SIMULATION <-');
+disp('Press any key once you have run launch_simulation and run -all...');
 pause;
 
 %% PART 2: ANALYZE HARDWARE FFT OUTPUT
@@ -65,9 +87,8 @@ for i = 1:N
     hw_fft_complex(i) = re_dec + 1i * im_dec;
 end
 
-% Unscramble the hardware Bit-Reversed addresses
-bit_rev_indices = bin2dec(fliplr(dec2bin(0:N-1, log2(N)))) + 1;
-hw_fft_sorted = hw_fft_complex(bit_rev_indices);
+% DIT FFT output is already in natural order when fed bit-reversed inputs
+hw_fft_sorted = hw_fft_complex;
 hw_magnitude = abs(hw_fft_sorted);
 
 %% PART 3: THE GOLDEN MODEL (MATLAB FFT)

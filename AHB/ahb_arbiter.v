@@ -113,7 +113,7 @@ module ahb_arbiter #(
     // -----------------------------------------------------------------------
     always @(*) begin
         for (i = 0; i < NUM_ARB_MSTS; i = i + 1) begin
-            if ((mst_htrans[2*i+1:2*i] == `BUSY) ||
+            if ((mst_htrans[2*i+:2] == `BUSY) ||
                 split_reg[i] ||
                 (grant_master != NUM_ARB_MSTS && grant_master != i &&
                  mst_hlock[grant_master]))
@@ -216,8 +216,9 @@ module ahb_arbiter #(
                                 // Simple round-robin from current turn
                                 begin: rr_block
                                     integer k;
+                                     integer idx;
                                     for (k = 0; k < NUM_ARB_MSTS; k = k + 1) begin
-                                        integer idx;
+                                         // idx declared at block level
                                         idx = (turn + k) % NUM_ARB_MSTS;
                                         if (hbusreq_msk[idx]) begin
                                             s_grant_master = idx[3:0];
