@@ -41,18 +41,18 @@ This cycle-accurate timeline documents the electrical transitions and data flows
 * **Action:** The system controller pulls `hresetn` low.
 * **Transition:** The Master FSM enters `IDLE` (State 0). The `done` flag is pulled low, internal address buffers are wiped, and both `hsel` lines are de-asserted.
 
-### 2. Boot & SRAM Check (Populating the Warehouse)
-* **Action:** The Master writes sequential test data into the Scratchpad SRAM (`0x0000_0000` to `0x0000_3FFF`).
-* **Logic:** The Arbiter decodes addresses under `0x4000`, asserting `slv_hsel[1] = 1`. The SRAM's byte-lane strobes activate based on the address offset (`addr[1:0]`) and transfer size (`hsize`), successfully storing individual bytes (e.g. `0xAA`, `0xBB`, `0xCC`, `0xDD` combined readback as `0xddccbbaa`).
+### 2. Boot & SRAM Check (Populating the Warehouse & Twiddles)
+* **Action:** The Master writes sequential test data into the Scratchpad SRAM (`0x0000_0000` to `0x0000_3FFF`). It also simulates the CPU reading Twiddle Factors from SPI Flash and writing them to the FFT's **Twiddle RAM**.
+* **Logic:** The Arbiter decodes addresses under `0x4000` to `slv_hsel[1]` (SRAM). Addresses for Twiddles (`0x4800` to `0x4BFC`) route to `slv_hsel[0]` and are stored inside the FFT's internal 256x32 Twiddle RAM.
 
 ### 3. Loading the FFT Accelerator (Passing the Baton)
 * **Action:** The Master loads 512 complex time-domain samples in **bit-reversed order** into the FFT Data RAM.
 * **Logic:** The Master performs 512 consecutive AHB writes to `0x0000_4000` through `0x0000_47FC`. The Arbiter decodes this and routes all data to `slv_hsel[0]`.
 
 ### 4. Triggering the Butterfly Math Engine
-* **Action:** The Master triggers the computation by writing `1` to the FFT Control Register at `0x0000_4800` (Bit 0 = `START`).
-* **Logic:** The FFT core decouples its memories from the AHB bus and begins Stage 1 of its Decimation-in-Time (DIT) algorithm. It executes 2,304 folded stage butterfly computations (32-bit complex multiplication, truncation to 16-bit Q15, addition, and memory overwrite).
-* **Done Polling:** The Master polls the Control Register. The wrapper holds the bus and returns `0` until processing is complete, at which point it asserts the `DONE` status (Bit 1).
+* **Action:** The Master triggers the computation by writing `1` to the FFT Control Register at `0x0000_4C00` (Bit 0 = `START`).
+* **Logic:** The FFT core decouples its data memories from the AHB bus and begins Stage 1 of its Decimation-in-Time (DIT) algorithm, using the CPU-loaded constants from the Twiddle RAM.
+* **Done Interrupt:** The Master can either poll the Control Register, or simply wait for the newly integrated **hardware `fft_irq` wire** to fire, which directly signals the CPU's Interrupt Controller that processing is complete.
 
 ### 5. Harvesting the Spectrum
 * **Action:** The Master reads 512 frequency-domain bins starting at `0x0000_4000` and writes them to a output file (`fft_out_soc.txt`) in **natural order**.
@@ -80,6 +80,7 @@ This cycle-accurate timeline documents the electrical transitions and data flows
 | `m_hready` | Output | 1 | wire | Master Ready feedback (indicates transfer has completed). |
 | `m_hresp` | Output | 2 | wire | Master Bus Response status (00 = OKAY, 01 = ERROR). |
 | `m_hrdata` | Output | 32 | wire | Master Read Data Bus (fed from selected slave). |
+| `fft_irq` | Output | 1 | wire | Hardware Interrupt signal; fires when FFT calculation finishes. |
 
 ### 2. Custom Scratchpad RAM (`ahb_sram`)
 
@@ -114,6 +115,7 @@ This cycle-accurate timeline documents the electrical transitions and data flows
 | `slv_hready_out`| Output | 1 | wire | Ready output. Stalls reads by 1 cycle (`0`) for synchronous RAM timing. |
 | `slv_hresp` | Output | 2 | wire | Response status (OKAY / ERROR). |
 | `slv_hrdata` | Output | 32 | wire | Read data. Outputs data RAM or Control Register. |
+| `fft_irq` | Output | 1 | wire | Hardware Interrupt out (asserts high when DONE flag is active). |
 
 ---
 
