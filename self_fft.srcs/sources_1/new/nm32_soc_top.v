@@ -26,7 +26,10 @@ module nm32_soc_top (
     output wire        m_hgrant,
     output wire        m_hready,
     output wire [1:0]  m_hresp,
-    output wire [31:0] m_hrdata
+    output wire [31:0] m_hrdata,
+    
+    // Hardware Interrupts
+    output wire        fft_irq
 );
 
     // -----------------------------------------------------------------------
@@ -201,7 +204,9 @@ module nm32_soc_top (
         .slv_hresp(s0_hresp),
         .slv_hrdata(s0_hrdata),
         .slv_hsplit(s0_hsplit),
-        .slv_err(s0_err)
+        .slv_err(s0_err),
+        
+        .fft_irq(fft_irq)
     );
     
     assign arb_slv_hresp[0]  = s0_hresp;

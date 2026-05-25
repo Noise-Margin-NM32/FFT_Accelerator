@@ -45,10 +45,12 @@ module tb_soc_system();
         .m_hprot(m_hprot),
         .m_hwdata(m_hwdata),
         
-        .m_hgrant(m_grant),
+        .m_hgrant(m_hgrant),
         .m_hready(m_hready),
         .m_hresp(m_hresp),
-        .m_hrdata(m_hrdata)
+        .m_hrdata(m_hrdata),
+        
+        .fft_irq() // Hardware interrupt left unconnected in this simple TB
     );
 
     // 180 MHz System Clock (5.556 ns period)
@@ -128,6 +130,7 @@ module tb_soc_system();
     // Verification Sequence
     // -----------------------------------------------------------------------
     reg [31:0] audio_mem [0:511];
+    reg [31:0] twiddle_mem [0:255];
     integer i, outfile;
     reg [31:0] rdata;
 
@@ -145,8 +148,9 @@ module tb_soc_system();
         m_hwdata  = 0;
         m_hprot   = 4'b0011;
 
-        // Load audio samples
+        // Load audio samples and twiddle factors (Simulating Flash Memory contents)
         $readmemh("../../../../audio_in.txt", audio_mem);
+        $readmemh("../../../../twiddles.txt", twiddle_mem);
 
         // Power-on Reset Sequence
         #50 hresetn = 1;
@@ -156,6 +160,15 @@ module tb_soc_system();
         $display("=================================================");
         $display("STARTING FULL SOC SYSTEM INTEGRATION SIMULATION");
         $display("=================================================");
+        
+        // -------------------------------------------------------------------
+        // BOOT PHASE: CPU LOADS TWIDDLES FROM FLASH (SPI) TO TWIDDLE RAM
+        // -------------------------------------------------------------------
+        $display("\n[Boot Phase] CPU reading Twiddle Factors from Flash and writing to Twiddle RAM...");
+        for (i = 0; i < 256; i = i + 1) begin
+            ahb_write(32'h0000_4800 + (i * 4), twiddle_mem[i], 3'b010);
+        end
+        $display("[Boot Phase] 256 Complex Twiddle Factors successfully loaded!");
 
         // -------------------------------------------------------------------
         // STEP 1: VERIFY SCRATCHPAD SRAM (SLAVE 1: 0x0000_0000 - 0x0000_3FFF)
@@ -200,15 +213,15 @@ module tb_soc_system();
         end
         $display("[FFT Test] 512 Samples successfully loaded.");
 
-        // Start FFT (Write 1 to control register at 0x4800)
-        $display("[FFT Test] Triggering START bit in FFT Control Register at 0x4800...");
-        ahb_write(32'h0000_4800, 32'h0000_0001, 3'b010);
+        // Start FFT (Write 1 to control register at 0x4C00)
+        $display("[FFT Test] Triggering START bit in FFT Control Register at 0x4C00...");
+        ahb_write(32'h0000_4C00, 32'h0000_0001, 3'b010);
 
-        // Poll for Done (Bit 1 of 0x4800)
+        // Poll for Done (Bit 1 of 0x4C00)
         $display("[FFT Test] Polling for DONE bit...");
         rdata = 0;
         while ((rdata & 32'h0000_0002) == 0) begin
-            ahb_read(32'h0000_4800, rdata);
+            ahb_read(32'h0000_4C00, rdata);
         end
         $display("[FFT Test] Done bit asserted! Processing complete.");
 
@@ -225,11 +238,11 @@ module tb_soc_system();
         // -------------------------------------------------------------------
         // STEP 3: STRESS TEST DYNAMIC DECODER ADDRESS BOUNDARY SWITCHING
         // -------------------------------------------------------------------
-        $display("\n[Stress Test] Interleaving accesses across SRAM (0x0000) and FFT (0x4000)...");
+        $display("\n[Stress Test] Interleaving accesses across SRAM (0x0000) and FFT Control (0x4C00)...");
         
         // Write to SRAM -> Write to FFT Control -> Read from SRAM
         ahb_write(32'h0000_0100, 32'hA5A5A5A5, 3'b010); // SRAM Write
-        ahb_write(32'h0000_4800, 32'h0000_0000, 3'b010); // FFT Wrapper Write
+        ahb_write(32'h0000_4C00, 32'h0000_0000, 3'b010); // FFT Wrapper Write
         ahb_read(32'h0000_0100, rdata);                  // SRAM Read
         
         if (rdata === 32'hA5A5A5A5)

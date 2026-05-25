@@ -25,7 +25,10 @@ module nm32_fft_ahb_wrapper #(
     output wire [1:0]  slv_hresp,
     output wire [31:0] slv_hrdata,
     output wire [15:0] slv_hsplit,
-    output wire        slv_err
+    output wire        slv_err,
+    
+    // Hardware Interrupt to CPU
+    output wire        fft_irq
 );
 
     // -----------------------------------------------------------------------
@@ -92,10 +95,17 @@ module nm32_fft_ahb_wrapper #(
     wire rst = ~hresetn; // Active-high reset for FFT module
     
     reg  start;
+    reg  start;
     wire ext_we;
     wire [8:0] ext_addr;
     wire [31:0] ext_din;
     wire [31:0] ext_dout;
+    
+    wire tw_we;
+    wire [7:0] tw_ext_addr;
+    wire [31:0] tw_ext_din;
+    wire [31:0] tw_ext_dout;
+    
     wire done;
 
     nm32_fft_top fft_engine (
@@ -106,6 +116,10 @@ module nm32_fft_ahb_wrapper #(
         .ext_addr(ext_addr),
         .ext_din(ext_din),
         .ext_dout(ext_dout),
+        .tw_we(tw_we),
+        .tw_ext_addr(tw_ext_addr),
+        .tw_ext_din(tw_ext_din),
+        .tw_ext_dout(tw_ext_dout),
         .done(done)
     );
 
@@ -113,39 +127,32 @@ module nm32_fft_ahb_wrapper #(
     // Address Decoding & Glue Logic (Synchronous)
     // -----------------------------------------------------------------------
     // Memory Map relative to BASE_ADDR:
-    // 0x000 - 0x7FC : 512x32 Data RAM
-    // 0x800         : Control Register (Bit 0 = Start, Bit 1 = Done)
+    // 0x000 - 0x7FC : 512x32 Data RAM (FFT Scratchpad)
+    // 0x800 - 0xBFC : 256x32 Twiddle RAM
+    // 0xC00         : Control Register (Bit 0 = Start, Bit 1 = Done)
     
     wire [11:0] local_addr = s_wrap_addr[11:0];
     
-    wire is_ctrl_reg = (local_addr == 12'h800);
+    wire is_ctrl_reg = (local_addr == 12'hC00);
+    wire is_twid_ram = (local_addr >= 12'h800 && local_addr < 12'hC00);
     wire is_data_ram = (local_addr < 12'h800);
     
-    // Map internal memory directly
-    // Word aligned address mapping (byte address / 4)
+    // Map internal memories directly
     assign ext_addr = local_addr[10:2]; 
     assign ext_din  = s_wrap_wdata;
     assign ext_we   = (is_data_ram && s_wrap_take);
     
-    // Synchronous reads (Zero Wait States)
-    // The ahb_slave_wait asserts s_wrap_ask during the data phase of a read.
-    // However, our internal RAM is synchronous. If we provide ext_addr NOW,
-    // the output is ready NEXT cycle. 
-    // Wait... if ahb_slave_wait registers haddr, s_wrap_addr is available in the data phase.
-    // This means by the time we use s_wrap_addr to index ram, we must output it instantly
-    // for zero wait state. The internal RAM takes 1 cycle. We might need a bypass or
-    // we can use 1 wait state for reads. 
-    // Let's use 1 Wait State for Reads if needed.
-    // No, ahb_slave_wait expects s_wrap_rdata combinationally during the data phase if s_wrap_ask_ok is 1.
-    // If the RAM is synchronous, we cannot provide it combinationally. We must stall!
-    // To stall, we set s_wrap_ask_ok = 0 for 1 cycle.
+    assign tw_ext_addr = local_addr[9:2]; // 256 words
+    assign tw_ext_din  = s_wrap_wdata;
+    assign tw_we       = (is_twid_ram && s_wrap_take);
     
+    // Synchronous reads (Zero Wait States)
     reg read_stall;
     always @(posedge hclk or negedge hresetn) begin
         if (!hresetn) begin
             read_stall <= 1'b0;
         end else begin
-            if (s_wrap_ask && is_data_ram && !read_stall) begin
+            if (s_wrap_ask && (is_data_ram || is_twid_ram) && !read_stall) begin
                 read_stall <= 1'b1; // Wait 1 cycle for RAM
             end else if (read_stall) begin
                 read_stall <= 1'b0;
@@ -156,8 +163,8 @@ module nm32_fft_ahb_wrapper #(
     // Accept writes immediately (Zero wait state for writes).
     assign s_wrap_take_ok = 1'b1; 
     
-    // Accept reads immediately if Control Reg, or after 1 cycle stall if Data RAM
-    assign s_wrap_ask_ok = is_ctrl_reg ? 1'b1 : (is_data_ram ? read_stall : 1'b1);
+    // Accept reads immediately if Control Reg, or after 1 cycle stall if Data/Twiddle RAM
+    assign s_wrap_ask_ok = is_ctrl_reg ? 1'b1 : ((is_data_ram || is_twid_ram) ? read_stall : 1'b1);
 
     // Read Data Mux
     always @(*) begin
@@ -167,6 +174,8 @@ module nm32_fft_ahb_wrapper #(
             s_wrap_rdata[0] = 1'b0; // start is write-only/auto-clears
         end else if (is_data_ram) begin
             s_wrap_rdata = ext_dout; // Ready after 1 cycle stall
+        end else if (is_twid_ram) begin
+            s_wrap_rdata = tw_ext_dout; // Ready after 1 cycle stall
         end
     end
     
@@ -192,5 +201,8 @@ module nm32_fft_ahb_wrapper #(
             end
         end
     end
+    
+    // Drive hardware interrupt out
+    assign fft_irq = done_latched;
 
 endmodule

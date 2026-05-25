@@ -8,6 +8,13 @@ module nm32_fft_top (
     input wire [8:0] ext_addr,
     input wire [31:0] ext_din,
     output wire [31:0] ext_dout,
+    
+    // Twiddle RAM Write Ports (Mapped to AHB)
+    input wire tw_we,
+    input wire [7:0] tw_ext_addr,
+    input wire [31:0] tw_ext_din,
+    output wire [31:0] tw_ext_dout,
+    
     output reg done
 );
 
@@ -22,14 +29,29 @@ module nm32_fft_top (
         .we_b(ram_we_b), .addr_b(ram_addr_b), .din_b(ram_din_b), .dout_b(ram_dout_b)
     );
 
-    wire signed [15:0] tw_re, tw_im;
+    // -----------------------------------------------------------------
+    // Twiddle RAM (256 x 32-bit words)
+    // -----------------------------------------------------------------
+    reg [31:0] twiddle_ram [0:255];
+    reg [31:0] tw_rdata_ext;
+    reg [31:0] tw_rdata_math;
     reg [7:0] tw_addr;
-
-    twiddle_rom_512 twiddle_rom (
-        .addr(tw_addr),
-        .wr(tw_re),
-        .wi(tw_im)
-    );
+    
+    always @(posedge clk) begin
+        // Port A: External AHB Write/Read
+        if (tw_we) begin
+            twiddle_ram[tw_ext_addr] <= tw_ext_din;
+        end
+        tw_rdata_ext <= twiddle_ram[tw_ext_addr];
+        
+        // Port B: Internal Math Engine Read
+        tw_rdata_math <= twiddle_ram[tw_addr];
+    end
+    
+    assign tw_ext_dout = tw_rdata_ext;
+    
+    wire signed [15:0] tw_re = tw_rdata_math[31:16];
+    wire signed [15:0] tw_im = tw_rdata_math[15:0];
 
     reg bf_start;
     wire bf_done;
