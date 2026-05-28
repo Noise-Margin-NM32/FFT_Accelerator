@@ -143,16 +143,22 @@ module nm32_fft_top (
                                 s <= s + 1;
                                 m <= m << 1;
                                 m2 <= m2 << 1;
-                                state <= 1;
+                                state <= 7; // Go to idle latching state
                             end
                         end else begin
                             k <= k + m;
-                            state <= 1;
+                            state <= 7; // Go to idle latching state
                         end
                     end else begin
                         j <= j + 1;
-                        state <= 1;
+                        state <= 7; // Go to idle latching state
                     end
+                end
+                
+                7: begin
+                    // Idle latching state to ensure counters (j, k, s) are entirely stable 
+                    // for a full clock cycle before they are used to compute ram_addr_a/b
+                    state <= 1;
                 end
                 
                 6: begin
