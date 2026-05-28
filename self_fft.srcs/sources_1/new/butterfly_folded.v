@@ -37,10 +37,11 @@ module butterfly_folded (
                     done <= 0;
                     if (start) begin
                         // Cycle 1: Start 32-bit Multiplications
-                        m_rr <= B_re * W_re;
-                        m_ii <= B_im * W_im;
-                        m_ri <= B_re * W_im;
-                        m_ir <= B_im * W_re;
+                        // Explicit $signed casts prevent Vivado from truncating intermediate products
+                        m_rr <= $signed(B_re) * $signed(W_re);
+                        m_ii <= $signed(B_im) * $signed(W_im);
+                        m_ri <= $signed(B_re) * $signed(W_im);
+                        m_ir <= $signed(B_im) * $signed(W_re);
                         
                         // Pipeline the A inputs so they wait for the multiplication
                         A_re_d <= A_re;
