@@ -18,10 +18,10 @@
 module tb_fft_top;
 
     // ----------------------------------------------------------------
-    // !! CHANGE THESE PATHS !!
+    // Paths have been updated to local directory
     // ----------------------------------------------------------------
-    localparam INPUT_FILE    = "D:/meera/1-TOPS/FFT/fft_input.txt";
-    localparam EXPECTED_FILE = "D:/meera/1-TOPS/FFT/fft_expected.txt";
+    localparam INPUT_FILE    = "fft_input.txt";
+    localparam EXPECTED_FILE = "fft_expected.txt";
     // ----------------------------------------------------------------
 
     localparam N           = 512;
