@@ -4,6 +4,10 @@ Welcome to the **verification branch** for the **Kavach 512-Point FFT Accelerato
 
 This branch focuses on the standalone **512-Point Cooley-Tukey DIT pipelined mathematical engine** without the AHB wrapper, providing a clean testbench and MATLAB scripts to accurately verify the core's mathematical functionality.
 
+## 📊 Verification Simulation
+
+![Simulation Waveform](simulation_waveform.jpeg)
+
 ---
 
 ## ⏱️ The Silicon Timeline: From Power-On to First Execution
