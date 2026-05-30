@@ -1,8 +1,8 @@
-# 🛡️ Kavach 512-Point FFT Accelerator Core with AHB Wrapper
+# ✅ Kavach 512-Point FFT Accelerator Core - Verification Environment
 
-Welcome to the **main branch** of the **Kavach 512-Point FFT Accelerator Core**. This repository represents the baseline, self-contained processing block developed as part of the **1TOPS initiative by the VLSI Society of India**.
+Welcome to the **verification branch** for the **Kavach 512-Point FFT Accelerator Core**. This repository represents the baseline, self-contained processing block developed as part of the **1TOPS initiative by the VLSI Society of India**.
 
-This branch contains the standalone **512-Point Cooley-Tukey DIT pipelined mathematical engine** integrated with an AMBA AHB protocol wrapper interface.
+This branch focuses on the standalone **512-Point Cooley-Tukey DIT pipelined mathematical engine** without the AHB wrapper, providing a clean testbench and MATLAB scripts to accurately verify the core's mathematical functionality.
 
 ---
 
