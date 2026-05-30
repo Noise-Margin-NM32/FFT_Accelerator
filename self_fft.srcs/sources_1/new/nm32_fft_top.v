@@ -18,16 +18,46 @@ module nm32_fft_top (
     output reg done
 );
 
-    wire [31:0] ram_dout_a, ram_dout_b;
-    reg [31:0] ram_din_a, ram_din_b;
-    reg [8:0] ram_addr_a, ram_addr_b;
-    reg ram_we_a, ram_we_b;
+    reg ping_pong_sel; // 0: SoC->RAM0, FFT->RAM1. 1: SoC->RAM1, FFT->RAM0
 
-    fft_data_ram data_ram (
+    // FFT-side signals
+    reg ram_fft_we_a, ram_fft_we_b;
+    reg [8:0] ram_fft_addr_a, ram_fft_addr_b;
+    reg [31:0] ram_fft_din_a, ram_fft_din_b;
+    wire [31:0] ram_fft_dout_a, ram_fft_dout_b;
+
+    // Two RAM instantiations
+    wire [31:0] ram0_dout_a, ram0_dout_b;
+    wire [31:0] ram1_dout_a, ram1_dout_b;
+    
+    wire ram0_we_a   = (ping_pong_sel == 0) ? ext_we   : ram_fft_we_a;
+    wire [8:0] ram0_addr_a = (ping_pong_sel == 0) ? ext_addr : ram_fft_addr_a;
+    wire [31:0] ram0_din_a  = (ping_pong_sel == 0) ? ext_din  : ram_fft_din_a;
+    wire ram0_we_b   = (ping_pong_sel == 0) ? 1'b0     : ram_fft_we_b;
+    wire [8:0] ram0_addr_b = (ping_pong_sel == 0) ? 9'b0     : ram_fft_addr_b;
+    wire [31:0] ram0_din_b  = (ping_pong_sel == 0) ? 32'b0    : ram_fft_din_b;
+
+    wire ram1_we_a   = (ping_pong_sel == 1) ? ext_we   : ram_fft_we_a;
+    wire [8:0] ram1_addr_a = (ping_pong_sel == 1) ? ext_addr : ram_fft_addr_a;
+    wire [31:0] ram1_din_a  = (ping_pong_sel == 1) ? ext_din  : ram_fft_din_a;
+    wire ram1_we_b   = (ping_pong_sel == 1) ? 1'b0     : ram_fft_we_b;
+    wire [8:0] ram1_addr_b = (ping_pong_sel == 1) ? 9'b0     : ram_fft_addr_b;
+    wire [31:0] ram1_din_b  = (ping_pong_sel == 1) ? 32'b0    : ram_fft_din_b;
+
+    fft_data_ram data_ram_0 (
         .clk(clk),
-        .we_a(ram_we_a), .addr_a(ram_addr_a), .din_a(ram_din_a), .dout_a(ram_dout_a),
-        .we_b(ram_we_b), .addr_b(ram_addr_b), .din_b(ram_din_b), .dout_b(ram_dout_b)
+        .we_a(ram0_we_a), .addr_a(ram0_addr_a), .din_a(ram0_din_a), .dout_a(ram0_dout_a),
+        .we_b(ram0_we_b), .addr_b(ram0_addr_b), .din_b(ram0_din_b), .dout_b(ram0_dout_b)
     );
+
+    fft_data_ram data_ram_1 (
+        .clk(clk),
+        .we_a(ram1_we_a), .addr_a(ram1_addr_a), .din_a(ram1_din_a), .dout_a(ram1_dout_a),
+        .we_b(ram1_we_b), .addr_b(ram1_addr_b), .din_b(ram1_din_b), .dout_b(ram1_dout_b)
+    );
+
+    assign ram_fft_dout_a = (ping_pong_sel == 0) ? ram1_dout_a : ram0_dout_a;
+    assign ram_fft_dout_b = (ping_pong_sel == 0) ? ram1_dout_b : ram0_dout_b;
 
     // -----------------------------------------------------------------
     // Twiddle RAM (256 x 32-bit words)
@@ -70,7 +100,7 @@ module nm32_fft_top (
         .done(bf_done)
     );
 
-    assign ext_dout = ram_dout_a;
+    assign ext_dout = (ping_pong_sel == 0) ? ram0_dout_a : ram1_dout_a;
 
     reg [3:0] s;
     reg [9:0] m;
@@ -84,27 +114,26 @@ module nm32_fft_top (
             state <= 0;
             done <= 0;
             bf_start <= 0;
-            ram_we_a <= 0; ram_we_b <= 0;
+            ram_fft_we_a <= 0; ram_fft_we_b <= 0;
             s <= 1; m <= 2; m2 <= 1; k <= 0; j <= 0;
+            ping_pong_sel <= 0;
         end else begin
             case (state)
                 0: begin
                     done <= 0;
-                    ram_we_a <= ext_we;
-                    ram_we_b <= 0;
-                    ram_addr_a <= ext_addr;
-                    ram_din_a <= ext_din;
+                    ram_fft_we_a <= 0;
+                    ram_fft_we_b <= 0;
                     
                     if (start) begin
+                        ping_pong_sel <= ~ping_pong_sel; // Swap buffers
                         s <= 1; m <= 2; m2 <= 1; k <= 0; j <= 0;
-                        ram_we_a <= 0;
                         state <= 1;
                     end
                 end
                 
                 1: begin
-                    ram_addr_a <= k + j;
-                    ram_addr_b <= k + j + m2;
+                    ram_fft_addr_a <= k + j;
+                    ram_fft_addr_b <= k + j + m2;
                     tw_addr <= j << (9 - s);
                     state <= 2;
                 end
@@ -114,8 +143,8 @@ module nm32_fft_top (
                 end
                 
                 3: begin
-                    bf_A_re <= ram_dout_a[31:16]; bf_A_im <= ram_dout_a[15:0];
-                    bf_B_re <= ram_dout_b[31:16]; bf_B_im <= ram_dout_b[15:0];
+                    bf_A_re <= ram_fft_dout_a[31:16]; bf_A_im <= ram_fft_dout_a[15:0];
+                    bf_B_re <= ram_fft_dout_b[31:16]; bf_B_im <= ram_fft_dout_b[15:0];
                     bf_W_re <= tw_re; bf_W_im <= tw_im;
                     bf_start <= 1;
                     state <= 4;
@@ -124,15 +153,15 @@ module nm32_fft_top (
                 4: begin
                     bf_start <= 0;
                     if (bf_done) begin
-                        ram_din_a <= {bf_X_re, bf_X_im};
-                        ram_din_b <= {bf_Y_re, bf_Y_im};
-                        ram_we_a <= 1; ram_we_b <= 1;
+                        ram_fft_din_a <= {bf_X_re, bf_X_im};
+                        ram_fft_din_b <= {bf_Y_re, bf_Y_im};
+                        ram_fft_we_a <= 1; ram_fft_we_b <= 1;
                         state <= 5;
                     end
                 end
                 
                 5: begin
-                    ram_we_a <= 0; ram_we_b <= 0;
+                    ram_fft_we_a <= 0; ram_fft_we_b <= 0;
                     if (j + 1 == m2) begin
                         j <= 0;
                         if (k + m >= 512) begin
